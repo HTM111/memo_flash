@@ -2,7 +2,6 @@ package main
 
 import (
 	"memoflash/internal/db"
-	"memoflash/internal/manager"
 	"memoflash/internal/services"
 	"memoflash/internal/ui"
 	"path"
@@ -14,16 +13,16 @@ import (
 )
 
 func main() {
-	manager, err := initialization()
+	services, err := initialization()
 	if err != nil {
 		ShowError(err)
 		return
 	}
 
-	ui.NewMemoFlashWindow(manager)
+	ui.NewMemoFlashWindow(services)
 
 }
-func initialization() (*manager.StudyManager, error) {
+func initialization() (*services.Service, error) {
 	if err := core.LoadAllSettings(); err != nil {
 		return nil, err
 	}
@@ -36,14 +35,15 @@ func initialization() (*manager.StudyManager, error) {
 	if err := db.InitSchema(); err != nil {
 		return nil, err
 	}
-	manager, err := manager.NewStudyManager(
-		services.NewCardService(db),
-		services.NewDeckService(db),
-	)
+
+	service := &services.Service{
+		CardService: services.NewCardService(db),
+		DeckService: services.NewDeckService(db),
+	}
 	if err != nil {
 		return nil, err
 	}
-	return manager, nil
+	return service, nil
 
 }
 func ShowError(err error) {
