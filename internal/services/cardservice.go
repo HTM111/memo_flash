@@ -19,7 +19,7 @@ type CardService interface {
 	GetStreak() (int, error)
 	CountDueCards() (int, error)
 	GetAllDueCards() ([]*models.Card, error)
-	GetCardsFromDeck(deckId int) ([]*models.Card, error)
+	GetCardsByDeck(deckId int) ([]*models.Card, error)
 	EditCard(id int, Front string, Back string) error
 }
 type cardService struct {
@@ -57,7 +57,7 @@ func (cs *cardService) DeleteCard(id int) error {
 		Where: sq.Eq{"ID": id},
 	})
 }
-func (cs *cardService) GetCardsFromDeck(deckId int) ([]*models.Card, error) {
+func (cs *cardService) GetCardsByDeck(deckId int) ([]*models.Card, error) {
 	return cs.db.GetCards(db.CardFilter{
 		Where: sq.Eq{"ParentDeckId": deckId},
 	})

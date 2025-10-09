@@ -41,9 +41,9 @@ func (ds *deckService) GetRecentlyStudiedDecks() ([]*models.Deck, error) {
 	return ds.db.GetDecks(db.DeckFilter{
 		Limit: 2,
 		Where: sq.NotEq{
-			"LastStudied": nil,
+			"Interval": nil,
 		},
-		OrderBy: "LastStudied DESC",
+		OrderBy: "Interval DESC",
 	})
 }
 func (ds *deckService) GetDecks() ([]*models.Deck, error) {

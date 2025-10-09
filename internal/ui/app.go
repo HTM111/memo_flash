@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"memoflash/internal/manager"
+	"memoflash/internal/services"
 	"path/filepath"
 	"slices"
 
@@ -58,16 +58,16 @@ func init() {
 
 type App struct {
 	core.Frame
-	StudyManager *manager.StudyManager
-	Settings     *AppSettings
-	Tabs         *core.Tabs
+	Services *services.Service
+	Settings *AppSettings
+	Tabs     *core.Tabs
 }
 
-func NewMemoFlashWindow(m *manager.StudyManager) {
+func NewMemoFlashWindow(service *services.Service) {
 	appName := "MemoFlash"
 	b := core.NewBody(appName).SetTitle(appName)
 	app := tree.New[App](b)
-	app.StudyManager = m
+	app.Services = service
 	app.CreateApp()
 	b.RunMainWindow()
 }
@@ -103,9 +103,13 @@ func (app *App) createTabPanels(tabs *core.Tabs) {
 	app.Tabs = tabs
 	frameStudy, tabStudy := tabs.NewTab("Study")
 	tabStudy.SetIcon(icons.School)
-	app.createStudyTab(frameStudy)
+	tree.AddChildAt(frameStudy, "decks-section", func(studyTab *StudyTab) {
+		studyTab.services = app.Services
+	})
 
 	frameDeck, decktab := tabs.NewTab("Decks")
 	decktab.SetIcon(icons.List)
-	app.createDeckTab(frameDeck)
+	tree.AddChildAt(frameDeck, "decks-section", func(deckTab *DeckTab) {
+		deckTab.services = app.Services
+	})
 }

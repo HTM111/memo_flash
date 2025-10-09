@@ -2,11 +2,14 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
+	"log"
+	"memoflash/internal/models"
+	"memoflash/internal/services"
 	"strconv"
 
 	"cogentcore.org/core/colors"
 	"cogentcore.org/core/core"
+	"cogentcore.org/core/events"
 	"cogentcore.org/core/icons"
 	"cogentcore.org/core/styles"
 	"cogentcore.org/core/styles/units"
@@ -14,23 +17,49 @@ import (
 	"cogentcore.org/core/tree"
 )
 
-func (app *App) createStudyTab(frame *core.Frame) {
-	tree.AddChild(frame, func(container *core.Frame) {
-		container.Styler(func(s *styles.Style) {
-			s.Grow.Set(1, 1)
-			s.Direction = styles.Column
-			s.Margin.SetAll(units.Dp(15))
-			s.Gap.Set(units.Dp(10))
-		})
-
-		app.makeStudyHeader(container)
-		app.createStatsSection(container)
-		app.createDecksSection(container)
-	})
+type StudyTab struct {
+	core.Frame
+	services  *services.Service
+	decks     []*models.Deck
+	Due       int
+	DayStreak int
+	Progress  int
 }
 
-func (app *App) makeStudyHeader(parent *core.Frame) {
-	tree.AddChild(parent, func(header *core.Frame) {
+func (st *StudyTab) Init() {
+	st.Frame.Init()
+	st.Styler(func(s *styles.Style) {
+		s.Grow.Set(1, 1)
+		s.Direction = styles.Column
+		s.Margin.SetAll(units.Dp(15))
+		s.Gap.Set(units.Dp(10))
+	})
+
+	st.makeStudyHeader()
+	st.createStatsSection()
+	st.createDecksSection()
+}
+func (st *StudyTab) fetchStats() error {
+	due, err := st.services.CountDueCards()
+	if err != nil {
+		return err
+	}
+	st.Due = due
+	daystreak, err := st.services.GetStreak()
+	if err != nil {
+		return err
+	}
+	st.DayStreak = daystreak
+	progress, err := st.services.GetProgress()
+	if err != nil {
+		return err
+	}
+	st.Progress = progress
+	return nil
+
+}
+func (st *StudyTab) makeStudyHeader() {
+	tree.AddChild(st, func(header *core.Frame) {
 		header.Styler(func(s *styles.Style) {
 			s.Direction = styles.Column
 			s.Gap.Set(units.Dp(8))
@@ -54,40 +83,61 @@ func (app *App) makeStudyHeader(parent *core.Frame) {
 	})
 }
 
-func (app *App) createStatsSection(parent *core.Frame) {
-	tree.AddChildAt(parent, "stats-section", func(section *core.Frame) {
+func (st *StudyTab) createStatsSection() {
+
+	tree.AddChild(st, func(section *core.Frame) {
 		section.Styler(func(s *styles.Style) {
 			s.Grow.Set(1, 0)
 			s.Direction = styles.Row
 			s.Gap.Set(units.Dp(16))
 		})
-		app.makeStateCard(section, "due-cards", "Due", func() string {
-			return fmt.Sprintf("%d", app.StudyManager.GetDueCount())
-		}, icons.TodayFill, colors.Orange)
-		app.makeStateCard(section, "day-streak", "Day Streak", func() string {
-			return fmt.Sprintf("%d", app.StudyManager.GetDayStreak())
-		}, icons.BoltFill, colors.Springgreen)
-		app.makeStateCard(section, "progress", "Progress", func() string {
-			return fmt.Sprintf("%d%%", app.StudyManager.GetProgress())
-		}, icons.BarChart, colors.Mediumvioletred)
-	})
-}
 
-func (app *App) makeStateCard(section *core.Frame, id, title string, value func() string, icon icons.Icon, color color.RGBA) {
-	tree.AddChildAt(section, id, func(w *StatCard) {
-		w.SetTitle(title)
-		w.Updater(func() {
-			if value != nil {
-				w.SetValue(value())
-			}
+		tree.AddChildAt(section, "due-today-card", func(w *StatCard) {
+			w.SetTitle("Due")
+			w.Updater(func() {
+				w.SetValue(fmt.Sprintf("%d", st.Due))
+
+			})
+			w.SetIcon(icons.TodayFill)
+			w.SetColor(colors.Orange)
 		})
-		w.SetIcon(icon)
-		w.SetColor(color)
+		tree.AddChildAt(section, "day-streak-card", func(w *StatCard) {
+			w.SetTitle("Day Streak")
+			w.Updater(func() {
+				w.SetValue(fmt.Sprintf("%d", st.DayStreak))
+			})
+			w.SetIcon(icons.BoltFill)
+			w.SetColor(colors.Springgreen)
+		})
+		tree.AddChildAt(section, "progress", func(w *StatCard) {
+			w.SetTitle("Progress")
+			w.Updater(func() {
+
+				w.SetValue(fmt.Sprintf("%d%%", st.Progress))
+
+			})
+			w.SetIcon(icons.BoltFill)
+			w.SetColor(colors.Springgreen)
+		})
+		section.OnFirst(events.Show, func(e events.Event) {
+			err := st.fetchStats()
+			if err != nil {
+				core.ErrorSnackbar(st, err, "Error fetching Stats")
+				return
+			}
+			section.Update()
+		})
 	})
+
 }
 
-func (app *App) createDecksSection(parent *core.Frame) {
-	tree.AddChildAt(parent, "decks-section", func(section *core.Frame) {
+func (st *StudyTab) createDecksSection() {
+	tree.AddChild(st, func(header *core.Text) {
+		header.SetText("Recently Studied").SetType(core.TextTitleLarge).Styler(func(s *styles.Style) {
+			s.Font.Weight = rich.ExtraBold
+		})
+	})
+	tree.AddChildAt(st, "decks-section", func(section *core.Frame) {
 		section.Styler(func(s *styles.Style) {
 			s.Grow.Set(1, 1)
 			s.Direction = styles.Column
@@ -97,34 +147,36 @@ func (app *App) createDecksSection(parent *core.Frame) {
 			s.Padding.Set(units.Dp(16))
 			s.Gap.Set(units.Dp(16))
 		})
+		section.OnFirst(events.Show, func(e events.Event) {
+			recentlyStudied, err := st.services.GetRecentlyStudiedDecks()
+			if err != nil {
+				core.ErrorSnackbar(st, err, "Error retrieving recently studied decks")
+				return
+			}
+			st.decks = recentlyStudied
+			for _, d := range recentlyStudied {
+				if d.LastStudied.IsZero() {
+					log.Println("time is null", d.Title)
+				}
+			}
+			section.Update()
 
-		tree.AddChild(section, func(header *core.Text) {
-			header.SetText("Recently Studied").SetType(core.TextTitleLarge).Styler(func(s *styles.Style) {
-				s.Font.Weight = rich.ExtraBold
-			})
 		})
-
 		section.Maker(func(p *tree.Plan) {
-			app.loadRecentDecks(p)
+			if len(st.decks) == 0 {
+				EmptyState(p, "No decks have been studied yet", icons.School)
+				return
+			}
+			for i, deck := range st.decks {
+				tree.AddAt(p, strconv.Itoa(i)+":"+strconv.Itoa(deck.ID), func(deckCard *ReviewDeck) {
+					deckCard.SetData(deck)
+				})
+			}
 		})
 	})
 }
 
-func (app *App) loadRecentDecks(p *tree.Plan) {
-	recentlyStudied := app.StudyManager.GetRecentlyStudiedDecks()
-	if len(recentlyStudied) == 0 {
-		app.emptyState(p, "No decks have been studied yet", icons.School)
-		return
-	}
-
-	for i, deck := range recentlyStudied {
-		tree.AddAt(p, strconv.Itoa(i)+":"+strconv.Itoa(deck.ID), func(deckCard *ReviewDeck) {
-			deckCard.SetData(deck)
-		})
-	}
-}
-
-func (app *App) emptyState(p *tree.Plan, message string, ic icons.Icon) {
+func EmptyState(p *tree.Plan, message string, ic icons.Icon) {
 	tree.Add(p, func(w *emptyState) {
 		w.SetIcon(ic)
 		w.SetMessage(message)

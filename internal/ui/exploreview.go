@@ -2,7 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"memoflash/internal/models"
+	"memoflash/internal/services"
 	"strconv"
+	"strings"
 
 	"cogentcore.org/core/core"
 	"cogentcore.org/core/events"
@@ -13,17 +16,31 @@ import (
 
 type ExploreView struct {
 	core.Frame
-
-	App          *App
-	searchQuery  string
-	contentFrame *core.Frame
+	deck          *models.Deck
+	service       *services.Service
+	searchQuery   string
+	Cards         []*models.Card
+	deckListFrame *core.Frame
+	contentFrame  *core.Frame
 }
 
 func (ev *ExploreView) Init() {
 	ev.Frame.Init()
+
 	ev.Styler(func(s *styles.Style) {
 		s.Direction = styles.Column
 		s.Grow.Set(1, 1)
+	})
+	ev.Updater(func() {
+		if ev.Cards == nil {
+			cards, err := ev.service.GetCardsByDeck(ev.deck.ID)
+			if err != nil {
+				core.ErrorDialog(ev, err, "Error Getting Deck")
+				ev.Cards = []*models.Card{}
+				return
+			}
+			ev.Cards = cards
+		}
 	})
 	tree.AddChild(ev, func(w *core.TextField) {
 		w.SetType(core.TextFieldOutlined)
@@ -53,8 +70,9 @@ func (ev *ExploreView) Init() {
 
 	})
 }
+
 func (ev *ExploreView) makeContent(p *tree.Plan) {
-	searchResults := ev.App.StudyManager.SearchCards(ev.searchQuery)
+	searchResults := ev.SearchCards(ev.searchQuery)
 	if len(searchResults) == 0 {
 		tree.AddAt(p, "empty-state", func(w *emptyState) {
 			w.Updater(func() {
@@ -73,32 +91,56 @@ func (ev *ExploreView) makeContent(p *tree.Plan) {
 					w.SetData(card)
 				})
 				w.SetEdit(func() {
-					ShowCardDialog(ev.App, &CardData{
+					ShowCardDialog(ev, &CardData{
 						Front: card.Front,
 						Back:  card.Back,
 					}, true, func(cd *CardData) {
-						err := ev.App.StudyManager.EditCard(card, cd.Front, cd.Back)
+						err := ev.service.EditCard(card.ID, cd.Front, cd.Back)
 						if err != nil {
-							core.ErrorDialog(ev.App, err, "Can't edit card")
+							core.ErrorDialog(ev, err, "Can't edit card")
 							return
 						}
+						card.Front = cd.Front
+						card.Back = cd.Front
 						w.Update()
 					})
 				})
 				w.SetDelete(func() {
-					if err := ev.App.StudyManager.DeleteCard(card); err != nil {
+					if err := ev.service.DeleteCard(card.ID); err != nil {
 						core.ErrorSnackbar(ev, err, "Error While deleting card")
+						return
 					}
-					ev.App.UpdateItemInDeck(card.ParentDeckId)
+					for index, cardItem := range ev.Cards {
+						if cardItem.ID == card.ID {
+							ev.Cards = append(ev.Cards[:index], ev.Cards[index+1:]...)
+						}
+					}
+					ev.deck.TotalCards--
+					if card.IsDue() {
+						ev.deck.DueCards--
+					}
+					ev.deckListFrame.Update()
 					ev.contentFrame.Update()
 				})
 			})
 		}
 	}
 }
-func (app *App) UpdateItemInDeck(id int) {
-	decklist := app.Tabs.TabByName("Decks").ChildByName("deck-list", 0).(*core.Frame)
-	if decklist != nil {
-		decklist.ChildByName(strconv.Itoa(id), 0).(*Deck).Update()
+func (ev *ExploreView) SearchCards(query string) []*models.Card {
+
+	if query == "" {
+		return ev.Cards
 	}
+	var cards []*models.Card
+	queryLower := strings.ToLower(query)
+	for _, card := range ev.Cards {
+		if card == nil {
+			continue
+		}
+		if strings.Contains(strings.ToLower(card.Front), queryLower) ||
+			strings.Contains(strings.ToLower(card.Back), queryLower) {
+			cards = append(cards, card)
+		}
+	}
+	return cards
 }

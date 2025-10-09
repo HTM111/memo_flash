@@ -45,3 +45,7 @@ type Card struct {
 	Difficulty   float64   `db:"Difficulty"`
 	Interval     time.Time `db:"Interval"`
 }
+
+func (card *Card) IsDue() bool {
+	return card.Interval.IsZero() || card.Interval.Before(time.Now())
+}
