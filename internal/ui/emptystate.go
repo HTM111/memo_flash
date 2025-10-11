@@ -68,3 +68,9 @@ func (nf *emptyState) SetIcon(icon icons.Icon) {
 func (nf *emptyState) SetMessage(message string) {
 	nf.Message = message
 }
+func EmptyState(p *tree.Plan, message string, ic icons.Icon) {
+	tree.Add(p, func(w *emptyState) {
+		w.SetIcon(ic)
+		w.SetMessage(message)
+	})
+}

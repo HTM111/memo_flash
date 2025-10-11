@@ -15,11 +15,13 @@ import (
 
 type RecentDeck struct {
 	core.Frame
+	title    string
 	deckData *models.Deck
 }
 
 func (deck *RecentDeck) Init() {
 	deck.Frame.Init()
+	deck.deckData = &models.Deck{}
 	deck.Styler(func(s *styles.Style) {
 		s.CenterAll()
 		s.Background = colors.Scheme.SurfaceContainer
@@ -34,11 +36,10 @@ func (deck *RecentDeck) Init() {
 			s.Min.Set(units.Dp(15))
 		})
 		w.Updater(func() {
-			if deck.deckData != nil {
-				w.Styler(func(s *styles.Style) {
-					s.Background = colors.Uniform(CategoryColors[deck.deckData.CategoryIndex])
-				})
-			}
+			w.Styler(func(s *styles.Style) {
+				s.Background = colors.Uniform(CategoryColors[deck.deckData.CategoryIndex])
+			})
+
 		})
 	})
 
@@ -53,9 +54,7 @@ func (deck *RecentDeck) Init() {
 				s.Font.Size.Set(20, units.UnitDp)
 			})
 			w.Updater(func() {
-				if deck.deckData != nil {
-					w.SetText(deck.deckData.Title)
-				}
+				w.SetText(deck.deckData.Title)
 			})
 		})
 		tree.AddChild(w, func(w *core.Text) {
@@ -64,9 +63,8 @@ func (deck *RecentDeck) Init() {
 				s.Color = colors.Scheme.OnSurfaceVariant
 			})
 			w.Updater(func() {
-				if deck.deckData != nil {
-					w.SetText(deck.deckData.Description)
-				}
+				w.SetText(deck.deckData.Description)
+
 			})
 		})
 
@@ -91,9 +89,8 @@ func (deck *RecentDeck) Init() {
 					s.Color = colors.Scheme.OnSurfaceVariant
 				})
 				w.Updater(func() {
-					if deck.deckData != nil {
-						w.SetText(utils.FormatDuration(deck.deckData.LastStudied))
-					}
+					w.SetText(utils.FormatDuration(deck.deckData.LastStudied))
+
 				})
 			})
 		})

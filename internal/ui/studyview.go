@@ -2,9 +2,9 @@ package ui
 
 import (
 	"fmt"
-	"log"
 	"memoflash/internal/models"
 	"memoflash/internal/services"
+	"sort"
 	"strconv"
 
 	"cogentcore.org/core/colors"
@@ -19,8 +19,8 @@ import (
 
 type StudyTab struct {
 	core.Frame
+	deckrepo  deckrepo
 	services  *services.Service
-	decks     []*models.Deck
 	Due       int
 	DayStreak int
 	Progress  int
@@ -112,12 +112,12 @@ func (st *StudyTab) createStatsSection() {
 		tree.AddChildAt(section, "progress", func(w *StatCard) {
 			w.SetTitle("Progress")
 			w.Updater(func() {
-
 				w.SetValue(fmt.Sprintf("%d%%", st.Progress))
 
 			})
+			w.SetIcon(icons.BarChart)
 			w.SetIcon(icons.BoltFill)
-			w.SetColor(colors.Springgreen)
+			w.SetColor(colors.Mediumvioletred)
 		})
 		section.OnFirst(events.Show, func(e events.Event) {
 			err := st.fetchStats()
@@ -130,13 +130,30 @@ func (st *StudyTab) createStatsSection() {
 	})
 
 }
+func (st *StudyTab) GetRecentDecks() []*models.Deck {
+	sortedList := make([]*models.Deck, 0)
+	for _, item := range st.deckrepo.GetDecks() {
+		if !item.LastStudied.IsZero() {
+			sortedList = append(sortedList, item)
+		}
+	}
+	sort.Slice(sortedList, func(i, j int) bool {
+		return sortedList[i].LastStudied.After(sortedList[j].LastStudied)
+	})
+	if len(sortedList) > 3 {
+		sortedList = sortedList[:3]
+		return sortedList
+	}
+	return sortedList
 
+}
 func (st *StudyTab) createDecksSection() {
 	tree.AddChild(st, func(header *core.Text) {
 		header.SetText("Recently Studied").SetType(core.TextTitleLarge).Styler(func(s *styles.Style) {
 			s.Font.Weight = rich.ExtraBold
 		})
 	})
+
 	tree.AddChildAt(st, "decks-section", func(section *core.Frame) {
 		section.Styler(func(s *styles.Style) {
 			s.Grow.Set(1, 1)
@@ -147,38 +164,19 @@ func (st *StudyTab) createDecksSection() {
 			s.Padding.Set(units.Dp(16))
 			s.Gap.Set(units.Dp(16))
 		})
-		section.OnFirst(events.Show, func(e events.Event) {
-			recentlyStudied, err := st.services.GetRecentlyStudiedDecks()
-			if err != nil {
-				core.ErrorSnackbar(st, err, "Error retrieving recently studied decks")
-				return
-			}
-			st.decks = recentlyStudied
-			for _, d := range recentlyStudied {
-				if d.LastStudied.IsZero() {
-					log.Println("time is null", d.Title)
+		section.Maker(func(p *tree.Plan) {
+			if len(st.deckrepo.GetDecks()) == 0 {
+				EmptyState(p, "No decks have been studied yet", icons.School)
+			} else {
+				for _, deck := range st.GetRecentDecks() {
+					deckID := deck.ID
+					tree.AddAt(p, strconv.Itoa(deckID), func(deckCard *RecentDeck) {
+						deckCard.Updater(func() {
+							deckCard.SetData(deck)
+						})
+					})
 				}
 			}
-			section.Update()
-
 		})
-		section.Maker(func(p *tree.Plan) {
-			if len(st.decks) == 0 {
-				EmptyState(p, "No decks have been studied yet", icons.School)
-				return
-			}
-			for i, deck := range st.decks {
-				tree.AddAt(p, strconv.Itoa(i)+":"+strconv.Itoa(deck.ID), func(deckCard *ReviewDeck) {
-					deckCard.SetData(deck)
-				})
-			}
-		})
-	})
-}
-
-func EmptyState(p *tree.Plan, message string, ic icons.Icon) {
-	tree.Add(p, func(w *emptyState) {
-		w.SetIcon(ic)
-		w.SetMessage(message)
 	})
 }

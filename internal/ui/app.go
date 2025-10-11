@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"memoflash/internal/models"
 	"memoflash/internal/services"
 	"path/filepath"
 	"slices"
@@ -28,8 +29,7 @@ func init() {
 		sc.Styler(func(s *styles.Style) {
 			s.Background = colors.Scheme.Surface
 			s.Padding.Set(units.Dp(10))
-
-			s.Margin.Zero() // Ensure no margins
+			s.Margin.Zero()
 			s.Grow.Set(1, 1)
 		})
 		sc.SetWidgetInit(func(w core.Widget) {
@@ -49,7 +49,7 @@ func init() {
 				})
 			case *core.Button:
 				w.Styler(func(s *styles.Style) {
-					s.Border.Radius = styles.BorderRadiusSmall // or
+					s.Border.Radius = styles.BorderRadiusSmall
 				})
 			}
 		})
@@ -61,6 +61,8 @@ type App struct {
 	Services *services.Service
 	Settings *AppSettings
 	Tabs     *core.Tabs
+	Decks    []*models.Deck
+	DeckMap  map[int]*models.Deck
 }
 
 func NewMemoFlashWindow(service *services.Service) {
@@ -73,9 +75,13 @@ func NewMemoFlashWindow(service *services.Service) {
 }
 
 func (app *App) Init() {
+	app.DeckMap = make(map[int]*models.Deck, 0)
 	app.Frame.Init()
+
 }
+
 func (app *App) CreateApp() {
+	app.FetchDecks()
 	app.Styler(func(s *styles.Style) {
 		s.Direction = styles.Column
 		s.Padding.Zero()
@@ -101,15 +107,19 @@ func (app *App) createMainContent(parent *core.Frame) {
 
 func (app *App) createTabPanels(tabs *core.Tabs) {
 	app.Tabs = tabs
+
 	frameStudy, tabStudy := tabs.NewTab("Study")
 	tabStudy.SetIcon(icons.School)
 	tree.AddChildAt(frameStudy, "decks-section", func(studyTab *StudyTab) {
+		studyTab.deckrepo = app
 		studyTab.services = app.Services
+
 	})
 
 	frameDeck, decktab := tabs.NewTab("Decks")
 	decktab.SetIcon(icons.List)
 	tree.AddChildAt(frameDeck, "decks-section", func(deckTab *DeckTab) {
-		deckTab.services = app.Services
+		deckTab.deckrepo = app
+		deckTab.service = app.Services
 	})
 }

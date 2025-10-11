@@ -13,12 +13,12 @@ type CardService interface {
 	CreateCard(Front string, Back string, deckId int) error
 	DeleteCard(id int) error
 	CountDueCardsFromDeck(deckId int) (int, error)
+	GetStreak() (int, error)
 	GetTotalCardsInDeck(deckId int) (int, error)
 	GetDueCardsFromDeck(deckId int) ([]*models.Card, error)
-	GetProgress() (int, error)
-	GetStreak() (int, error)
 	CountDueCards() (int, error)
 	GetAllDueCards() ([]*models.Card, error)
+	GetProgress() (int, error)
 	GetCardsByDeck(deckId int) ([]*models.Card, error)
 	EditCard(id int, Front string, Back string) error
 }
@@ -32,6 +32,29 @@ func NewCardService(db *db.Database) *cardService {
 func (cs *cardService) GetCards() ([]*models.Card, error) {
 	return cs.db.GetCards(db.CardFilter{})
 }
+func (cs *cardService) GetProgress() (int, error) {
+	totalCards, err := cs.db.Count(db.CounterFilter{
+		Table: "cards",
+	})
+	if err != nil {
+		return 0, err
+	}
+	progress, err := cs.db.Count(db.CounterFilter{
+		Table:     "cards",
+		Condition: squirrel.NotEq{"interval": nil},
+	})
+	if err != nil {
+		return 0, err
+	}
+	var ProgressPercentage int
+	if totalCards == 0 {
+		ProgressPercentage = 0
+	} else {
+		ProgressPercentage = int((progress / totalCards) * 100)
+	}
+	return ProgressPercentage, nil
+}
+
 func (cs *cardService) GetAllDueCards() ([]*models.Card, error) {
 	return cs.db.GetCards(db.CardFilter{
 		Order: "interval ASC",
@@ -79,6 +102,16 @@ func (cs *cardService) EditCard(id int, Front string, Back string) error {
 	return cs.db.EditCard(Front, Back, id)
 }
 
+func (cs *cardService) CountDueCards() (int, error) {
+	counts, err := cs.db.Count(db.CounterFilter{
+		Condition: squirrel.Or{
+			squirrel.Eq{"interval": nil},
+			squirrel.LtOrEq{"date(interval,'unixepoch')": time.Now().Format("2006-01-02")},
+		},
+		Table: "cards",
+	})
+	return int(counts), err
+}
 func (cs *cardService) isYesterdayStudied() (bool, error) {
 	value, err := cs.db.Count(db.CounterFilter{
 		Condition: sq.Eq{"date(LastStudied,'unixepoch')": time.Now().AddDate(0, 0, -1).Format("2006-01-02")},
@@ -108,39 +141,6 @@ func (cs *cardService) GetStreak() (int, error) {
 	}
 	err = cs.db.UpdateStats(map[string]any{"dayStreak": streak, "lastTimeUpdated": time.Now().Unix()})
 	return streak, err
-}
-
-func (cs *cardService) CountDueCards() (int, error) {
-	counts, err := cs.db.Count(db.CounterFilter{
-		Condition: squirrel.Or{
-			squirrel.Eq{"interval": nil},
-			squirrel.LtOrEq{"date(interval,'unixepoch')": time.Now().Format("2006-01-02")},
-		},
-		Table: "cards",
-	})
-	return int(counts), err
-}
-func (cs *cardService) GetProgress() (int, error) {
-	totalCards, err := cs.db.Count(db.CounterFilter{
-		Table: "cards",
-	})
-	if err != nil {
-		return 0, err
-	}
-	progress, err := cs.db.Count(db.CounterFilter{
-		Table:     "cards",
-		Condition: squirrel.NotEq{"interval": nil},
-	})
-	if err != nil {
-		return 0, err
-	}
-	var ProgressPercentage int
-	if totalCards == 0 {
-		ProgressPercentage = 0
-	} else {
-		ProgressPercentage = int((progress / totalCards) * 100)
-	}
-	return ProgressPercentage, nil
 }
 
 func (cs *cardService) CountDueCardsFromDeck(deckId int) (int, error) {

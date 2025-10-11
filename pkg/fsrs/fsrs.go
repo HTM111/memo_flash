@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-// FSRS parameters (simplified set based on research)
 const (
 	// Initial stability for new cards
 	W0 = 0.4 // Again
@@ -124,7 +123,6 @@ func handleEasyReview(card *models.Card, daysSince float64, isNewCard bool) {
 	}
 }
 
-// Calculate retrievability using correct FSRS formula
 func calculateRetrievability(daysSince, stability float64) float64 {
 	return math.Exp(math.Log(RequestedRetention) * daysSince / stability)
 }

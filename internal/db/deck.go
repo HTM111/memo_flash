@@ -19,7 +19,6 @@ type DeckFilter struct {
 func (database *Database) GetDecks(filter DeckFilter) ([]*models.Deck, error) {
 	var decks []*models.Deck
 
-	// Main query to fetch decks and their details, including due cards count
 	SelectBuilder := sq.Select(
 		"decks.ID",
 		"decks.Title",

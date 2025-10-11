@@ -2,12 +2,12 @@ package ui
 
 import (
 	"image/color"
-	"log"
 	"memoflash/internal/models"
 	"memoflash/internal/services"
 	"memoflash/internal/values"
 	"memoflash/pkg/fsrs"
 	"strconv"
+	"time"
 
 	"cogentcore.org/core/core"
 	"cogentcore.org/core/events"
@@ -29,57 +29,34 @@ var CategoryColors = []color.Color{
 
 type DeckTab struct {
 	core.Frame
-	services *services.Service
-	Decks    []*models.Deck
 	deckList *core.Frame
-	decksMap map[int]*models.Deck
+	service  *services.Service
+	deckrepo deckrepo
 }
 
 func (dt *DeckTab) Init() {
-	dt.decksMap = make(map[int]*models.Deck)
 	dt.Frame.Init()
 	dt.Styler(func(s *styles.Style) {
 		s.Margin.SetAll(units.Dp(15))
 		s.Grow.Set(1, 1)
 		s.Direction = styles.Column
 	})
-	dt.createDeckTab()
-	dt.Updater(func() {
-		if dt.Decks == nil {
-			list, err := dt.services.GetDecks()
-			if err != nil {
-				log.Println("Err", err.Error())
-			}
-			if len(list) == 0 {
-				list = []*models.Deck{}
-			}
-			dt.Decks = list
-			for _, item := range list {
-				dt.decksMap[item.ID] = item
-			}
-		}
-	})
-
-}
-
-func (dt *DeckTab) createDeckTab() {
 	dt.makeDeckHeader(dt)
 	dt.makeDeckListContainer(dt)
 
 }
 
 func (dt *DeckTab) makeDeckListContainer(frame tree.Node) {
-
 	tree.AddChildAt(frame, "deck-list", func(w *core.Frame) {
+		dt.deckList = w
 		w.Styler(func(s *styles.Style) {
 			s.Direction = styles.Column
 			s.Grow.Set(1, 1)
 			s.Gap.Set(units.Dp(12))
 		})
-		dt.deckList = w
 		w.Maker(func(p *tree.Plan) {
-			if len(dt.Decks) > 0 {
-				dt.makeDeckList(p, dt.Decks)
+			if len(dt.deckrepo.GetDecks()) > 0 {
+				dt.makeDeckList(p, dt.deckrepo.GetDecks())
 			} else {
 				EmptyState(p, "No Decks Found", icons.Info)
 			}
@@ -117,7 +94,7 @@ func (dt *DeckTab) makeDeckHeader(parent tree.Node) {
 				s.Padding.SetAll(units.Dp(12))
 			})
 			w.OnClick(func(e events.Event) {
-				dueCards, err := dt.services.GetAllDueCards()
+				dueCards, err := dt.service.GetAllDueCards()
 				if err != nil {
 					core.ErrorSnackbar(dt, err, "Error Getting Due Cards")
 					return
@@ -138,7 +115,7 @@ func (dt *DeckTab) makeDeckHeader(parent tree.Node) {
 			w.OnClick(func(e events.Event) {
 				ShowDeckDialog(dt, &DeckData{},
 					false, func(dd *DeckData) {
-						id, err := dt.services.CreateDeck(dd.Title, dd.Description, dd.CategoryColorIndex)
+						id, err := dt.service.CreateDeck(dd.Title, dd.Description, dd.CategoryColorIndex)
 						if err != nil {
 							core.ErrorSnackbar(dt, err, "Error Creating Deck")
 							return
@@ -149,8 +126,7 @@ func (dt *DeckTab) makeDeckHeader(parent tree.Node) {
 							Description:   dd.Description,
 							CategoryIndex: dd.CategoryColorIndex,
 						}
-						dt.Decks = append(dt.Decks, item)
-						dt.decksMap[id] = item
+						dt.deckrepo.AddDeck(item)
 						dt.deckList.Update()
 
 					})
@@ -162,7 +138,7 @@ func (dt *DeckTab) makeDeckHeader(parent tree.Node) {
 func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 	w.OnAddCard(func() {
 		ShowCardDialog(dt, &CardData{}, false, func(card *CardData) {
-			err := dt.services.CreateCard(card.Front, card.Back, deck.ID)
+			err := dt.service.CreateCard(card.Front, card.Back, deck.ID)
 			if err != nil {
 				core.ErrorSnackbar(dt, err, "Error Creating Card")
 				return
@@ -181,7 +157,7 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 			CategoryColorIndex: deck.CategoryIndex,
 		},
 			true, func(dd *DeckData) {
-				err := dt.services.EditDeck(deck.ID, dd.Title, dd.Description, dd.CategoryColorIndex)
+				err := dt.service.EditDeck(deck.ID, dd.Title, dd.Description, dd.CategoryColorIndex)
 				if err != nil {
 					core.ErrorSnackbar(dt, err, "Error Updating Deck")
 					return
@@ -195,7 +171,7 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 	w.OnExplore(func() {
 		pm := core.NewBody()
 		tree.AddChild(pm, func(w *ExploreView) {
-			w.service = dt.services
+			w.service = dt.service
 			w.deckListFrame = dt.deckList
 			w.deck = deck
 		})
@@ -225,17 +201,12 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 
 	w.OnDelete(func() {
 		deletAction := func() {
-			err := dt.services.DeleteDeck(deck.ID)
+			err := dt.service.DeleteDeck(deck.ID)
 			if err != nil {
 				core.ErrorSnackbar(dt, err, "Error Deleting Deck")
 				return
 			}
-			for i, deckitem := range dt.Decks {
-				if deckitem.ID == deck.ID {
-					dt.Decks = append(dt.Decks[:i], dt.Decks[i+1:]...)
-				}
-			}
-			delete(dt.decksMap, deck.ID)
+			dt.deckrepo.DeleteDeck(deck.ID)
 			dt.UpdateList()
 		}
 		if deck.TotalCards == 0 {
@@ -252,7 +223,7 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 			core.MessageDialog(dt, "No cards to study")
 			return
 		}
-		dueCards, err := dt.services.GetDueCardsFromDeck(deck.ID)
+		dueCards, err := dt.service.GetDueCardsFromDeck(deck.ID)
 		if err != nil {
 			core.ErrorSnackbar(dt, err, "Error Getting Due Cards")
 			return
@@ -261,7 +232,6 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 			core.MessageDialog(dt, "No cards to study")
 			return
 		}
-
 		dt.HandleStudy(dueCards)
 
 	})
@@ -269,32 +239,43 @@ func (dt *DeckTab) handleActions(w *Deck, deck *models.Deck) {
 }
 func (dt *DeckTab) HandleStudy(dueCards []*models.Card) {
 	d := core.NewBody("Back to Decks")
-	var previousDeckId = dueCards[0].ParentDeckId
-	var isSame bool = true
 	pages := core.NewPages(d)
+	same := true
+	deckid := dueCards[0].ParentDeckId
+
 	pages.AddPage("main", func(pg *core.Pages) {
 		p := core.NewFrame(pg)
 		p.Styler(func(s *styles.Style) {
 			s.Grow.Set(1, 1)
 			s.CenterAll()
 		})
-
 		tree.AddChild(p, func(w *StudyPage) {
 			w.Cards = dueCards
 			w.OnEach = func(card *models.Card, rating values.Difficulty) error {
-				dt.decksMap[card.ParentDeckId].DueCards--
 				fsrs.Review(rating, card)
-				if previousDeckId != card.ParentDeckId {
-					isSame = false
+				if card.ParentDeckId != deckid {
+					same = false
 				}
-				previousDeckId = card.ParentDeckId
-				return dt.services.UpdateInterval(card.ID,
-					card.Interval,
-					card.Difficulty,
-					card.Stability)
-			}
+				err := dt.service.UpdateInterval(card.ID, card.Interval, card.Difficulty, card.Stability)
+				if err != nil {
+					return err
+				}
+				if deck := dt.deckrepo.GetDeck(card.ParentDeckId); deck != nil {
+					deck.DueCards--
+				}
+				deckid = card.ParentDeckId
 
-			w.OnDone = func() { pages.Open("status-page") }
+				return nil
+			}
+			w.OnDone = func() {
+				if same {
+					dt.service.UpdateReadTime(deckid)
+					if deck := dt.deckrepo.GetDeck(deckid); deck != nil {
+						deck.LastStudied = time.Now()
+					}
+				}
+				pages.Open("status-page")
+			}
 		})
 	})
 
@@ -308,13 +289,22 @@ func (dt *DeckTab) HandleStudy(dueCards []*models.Card) {
 	})
 
 	d.OnClose(func(e events.Event) {
-		if isSame {
-			dt.services.UpdateReadTime(previousDeckId)
-		}
 		dt.UpdateList()
 	})
 
 	d.RunFullDialog(dt)
+}
+
+func (dt *DeckTab) makeDeckList(p *tree.Plan, items []*models.Deck) {
+	for _, deck := range items {
+		tree.AddAt(p, strconv.Itoa(deck.ID), func(w *Deck) {
+			dt.handleActions(w, deck)
+			w.Updater(func() {
+				w.setData(deck)
+			})
+
+		})
+	}
 }
 func (dt *DeckTab) UpdateItemInList(id int) {
 	item := dt.deckList.ChildByName(strconv.Itoa(id), 0)
@@ -324,16 +314,4 @@ func (dt *DeckTab) UpdateItemInList(id int) {
 }
 func (dt *DeckTab) UpdateList() {
 	dt.deckList.Update()
-}
-func (dt *DeckTab) makeDeckList(p *tree.Plan, items []*models.Deck) {
-	for _, deck := range items {
-		tree.AddAt(p, strconv.Itoa(deck.ID), func(w *Deck) {
-
-			dt.handleActions(w, deck)
-			w.Updater(func() {
-				w.setData(deck)
-			})
-
-		})
-	}
 }
